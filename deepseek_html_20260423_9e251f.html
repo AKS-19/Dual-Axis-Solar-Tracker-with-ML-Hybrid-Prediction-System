@@ -1,0 +1,545 @@
+<!-- 
+  FINAL VERSION – Solar Tracker Main Simulation
+  Includes: Three.js 3D panel, sun position, environment controls,
+            auto/manual mode, ML API integration, and data broadcasting
+            to analytics page.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar Tracker — ML + Direct Sun Tracking</title>
+<style>
+/* ========== COMPLETE STYLES (same as previous working version) ========== */
+/* (Full CSS from previous final answer – I will include it briefly for brevity) */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Chakra+Petch:wght@300;400;500;600;700&display=swap');
+:root {
+  --bg: #060d14; --surf: #0b1824; --card: #0d1c2c; --b0: #172e46; --b1: #1e4870;
+  --acc: #00e5ff; --sun: #ffca28; --warm: #ff7043; --grn: #69f0ae; --err: #ff1744;
+  --mid: #5f8faa; --lo: #2d5570; --hi: #d6eeff;
+  --mono: 'Share Tech Mono', monospace; --sans: 'Chakra Petch', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--hi); font-family:var(--sans); }
+#app { display:grid; grid-template-columns:1fr 300px; grid-template-rows:48px 1fr; height:100vh; }
+#app.anomaly { animation: flash-red 2s infinite; }
+#app.stow    { animation: flash-amber 2s infinite; }
+@keyframes flash-red   { 0%,100%{box-shadow:inset 0 0 0px var(--err);} 50%{box-shadow:inset 0 0 15px var(--err);} }
+@keyframes flash-amber { 0%,100%{box-shadow:inset 0 0 0px var(--sun);} 50%{box-shadow:inset 0 0 15px var(--sun);} }
+#stow-banner { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(255,202,40,0.15); border:2px solid var(--sun); color:var(--sun); padding:10px 28px; border-radius:8px; font-size:13px; font-weight:700; letter-spacing:2px; z-index:20; pointer-events:none; }
+#night-overlay { display:none; position:absolute; inset:0; background:rgba(3,6,20,0.55); z-index:5; pointer-events:none; }
+#hdr { grid-column:1/3; display:flex; align-items:center; justify-content:space-between; padding:0 20px; background:var(--surf); border-bottom:1px solid var(--b0); z-index:20; }
+.brand { display:flex; align-items:center; gap:10px; font-size:16px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--acc); }
+.brand svg { width:22px; height:22px; }
+.hdr-mid { font-family:var(--mono); font-size:11px; color:var(--mid); display:flex; gap:24px; }
+.hdr-mid b { color:var(--acc); }
+.hdr-right { display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:10px; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--grn); box-shadow:0 0 8px var(--grn); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+#vp { position:relative; background:#000; overflow:hidden; }
+#cv { width:100%; height:100%; display:block; }
+.hud { position:absolute; background:rgba(6,13,20,0.92); border:1px solid var(--b1); border-radius:8px; padding:10px 14px; backdrop-filter:blur(8px); pointer-events:none; z-index:10; }
+#hud-sun { top:14px; left:14px; min-width:160px; }
+.hud-title { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--acc); margin-bottom:6px; }
+.hud-row { display:flex; justify-content:space-between; gap:20px; font-family:var(--mono); font-size:11px; margin-bottom:3px; }
+.hud-row .value { color:var(--sun); }
+#ml-badge { position:absolute; top:14px; right:14px; min-width:260px; background:rgba(6,13,20,0.92); border:1px solid var(--b1); border-radius:8px; padding:10px 14px; pointer-events:none; z-index:10; }
+.ml-row { display:flex; justify-content:space-between; gap:12px; font-family:var(--mono); font-size:10px; margin-bottom:4px; }
+.ml-row .label { color:var(--lo); }
+.ml-row .value { font-weight:700; }
+.ml-row .value.ml { color:var(--grn); }
+.ml-footer { font-size:8px; color:var(--lo); padding-top:6px; margin-top:4px; border-top:1px solid var(--b0); }
+#api-pill { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); background:rgba(6,13,20,0.92); border:1px solid var(--b1); border-radius:20px; padding:5px 14px; font-family:var(--mono); font-size:9px; display:flex; align-items:center; gap:8px; z-index:10; }
+#mode-btns { position:absolute; bottom:14px; right:14px; display:flex; gap:6px; background:rgba(6,13,20,0.92); border:1px solid var(--b1); border-radius:8px; padding:4px; z-index:10; }
+.mbtn { padding:6px 18px; border-radius:5px; border:none; background:transparent; color:var(--mid); font-family:var(--sans); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.2s; }
+.mbtn.on { background:var(--acc); color:var(--bg); }
+#compass { position:absolute; bottom:14px; left:14px; width:80px; height:80px; pointer-events:none; z-index:10; }
+#rpanel { background:var(--surf); border-left:1px solid var(--b0); overflow-y:auto; padding:16px; }
+.sec { margin-bottom:20px; border-bottom:1px solid var(--b0); padding-bottom:16px; }
+.sec-t { font-size:10px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; color:var(--mid); margin-bottom:12px; }
+.angle-pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+.acard { background:var(--card); border:1px solid var(--b0); border-radius:8px; padding:12px; position:relative; overflow:hidden; }
+.acard::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+.acard.x::before { background:linear-gradient(90deg, var(--acc), #006080); }
+.acard.y::before { background:linear-gradient(90deg, var(--sun), #b06000); }
+.acard-lbl { font-size:8px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--lo); margin-bottom:5px; }
+.acard-val { font-family:var(--mono); font-size:28px; font-weight:700; line-height:1; }
+.acard.x .acard-val { color:var(--acc); }
+.acard.y .acard-val { color:var(--sun); }
+.acard-bar { width:100%; height:3px; background:var(--b0); border-radius:2px; margin-top:8px; overflow:hidden; }
+.acard-fill { height:100%; border-radius:2px; transition:width 0.3s ease; }
+.acard.x .acard-fill { background:var(--acc); }
+.acard.y .acard-fill { background:var(--sun); }
+.sub-row { display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; background:var(--card); border:1px solid var(--b0); border-radius:6px; padding:6px 10px; margin-bottom:6px; }
+.tcard { background:var(--card); border:1px solid var(--b0); border-radius:8px; padding:12px; margin:12px 0; position:relative; overflow:hidden; }
+.tcard::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, var(--warm), #cc0000); }
+.tcard-inner { display:flex; align-items:center; gap:12px; }
+.tcard-ico { font-size:28px; }
+.tcard-val { font-family:var(--mono); font-size:28px; font-weight:700; color:var(--warm); }
+.tcard-eq { font-family:var(--mono); font-size:8px; color:var(--lo); margin-top:8px; }
+.cr { display:flex; align-items:center; margin-bottom:12px; }
+.cr-lbl { display:flex; align-items:center; gap:6px; width:100px; flex-shrink:0; color:var(--mid); font-size:11px; font-weight:500; }
+.cr-r { display:flex; align-items:center; gap:10px; flex:1; }
+.cr-val { font-family:var(--mono); font-size:10px; min-width:55px; text-align:right; }
+input[type=range] { -webkit-appearance:none; flex:1; height:3px; border-radius:2px; background:var(--card); border:1px solid var(--b0); outline:none; cursor:pointer; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px; border-radius:50%; background:var(--acc); cursor:pointer; border:2px solid var(--bg); }
+input[type=time], input[type=date], select { background:var(--card); border:1px solid var(--b0); color:var(--hi); font-family:var(--mono); font-size:10px; padding:5px 8px; border-radius:5px; width:100%; }
+.trow { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.tog { position:relative; width:40px; height:20px; cursor:pointer; }
+.tog input { display:none; }
+.tog-track { width:100%; height:100%; background:var(--card); border:1px solid var(--b0); border-radius:12px; transition:all 0.25s; }
+.tog input:checked ~ .tog-track { background:var(--grn); }
+.tog-thumb { position:absolute; top:2px; left:2px; width:14px; height:14px; background:#fff; border-radius:50%; transition:transform 0.25s; }
+.tog input:checked ~ .tog-thumb { transform:translateX(20px); }
+.sec-btn { width:100%; padding:8px; background:var(--card); border:1px solid var(--b1); color:var(--hi); border-radius:6px; cursor:pointer; font-weight:600; margin-top:8px; }
+.sec-btn.pri { background:var(--acc); color:var(--bg); border-color:var(--acc); }
+.api-ind { margin-top:10px; background:rgba(105,240,174,0.08); border:1px solid rgba(105,240,174,0.2); border-radius:6px; padding:8px 10px; display:flex; justify-content:space-between; font-size:9px; }
+</style>
+</head>
+<body>
+<div id="app">
+<div id="hdr">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+    SOLAR TRACKER
+    <span style="color:var(--lo);font-size:10px;">DUAL-AXIS · PRECISION TRACKING</span>
+  </div>
+  <div class="hdr-mid"><div>TIME: <b id="h-time">--:--</b></div><div>DATE: <b id="h-date">2025-04-22</b></div></div>
+  <div class="hdr-right"><div class="dot" id="hdr-dot"></div><span id="hdr-status">TRACKING ACTIVE</span></div>
+</div>
+<div id="vp"><canvas id="cv"></canvas>
+  <div id="stow-banner">⚠ WIND STOW ACTIVE — PANEL PARKED</div>
+  <div id="night-overlay"></div>
+  <div class="hud" id="hud-sun"><div class="hud-title">☀ SUN POSITION</div><div class="hud-row"><span>Azimuth</span><span class="value" id="h-az">--</span>°</div><div class="hud-row"><span>Elevation</span><span class="value" id="h-el">--</span>°</div><div class="hud-row"><span>Tracking Err</span><span class="value" id="h-err">--</span>°</div></div>
+  <div id="ml-badge"><div class="hud-title">🎯 PANEL TRACKING</div><div class="ml-row"><span class="label">Panel Tilt</span><span class="value ml" id="ml-tilt">--</span></div><div class="ml-row"><span class="label">Panel Azimuth</span><span class="value ml" id="ml-az">--</span></div><div class="ml-row"><span class="label">Formula</span><span class="value" id="ml-formula">--</span></div><div class="ml-row"><span class="label">Anomaly Detect</span><span class="value" id="ml-anomaly">--</span></div><div class="ml-footer">✓ ML hybrid tracking when API available</div></div>
+  <div id="api-pill"><div id="api-dot" style="width:6px;height:6px;border-radius:50%;background:var(--grn);box-shadow:0 0 5px var(--grn);"></div><span id="api-status">DIRECT TRACKING</span></div>
+  <div id="mode-btns"><button class="mbtn on" id="btn-auto">AUTO</button><button class="mbtn" id="btn-manual">MANUAL</button></div>
+  <svg id="compass" viewBox="0 0 80 80"><circle cx="40" cy="40" r="38" fill="rgba(6,13,20,0.85)" stroke="rgba(30,72,112,0.9)" stroke-width="1.5"/><text x="40" y="12" text-anchor="middle" fill="#d6eeff" font-size="9" font-weight="700">N</text><text x="40" y="74" text-anchor="middle" fill="#5f8faa" font-size="8">S</text><text x="72" y="44" text-anchor="middle" fill="#5f8faa" font-size="8">E</text><text x="8" y="44" text-anchor="middle" fill="#5f8faa" font-size="8">W</text><g id="compass-needle" transform="rotate(0 40 40)"><polygon points="40,15 43,40 40,44 37,40" fill="#00e5ff" opacity="0.9"/><polygon points="40,65 43,40 40,44 37,40" fill="#2d5570"/></g><circle cx="40" cy="40" r="2.5" fill="#00e5ff"/></svg>
+</div>
+<div id="rpanel">
+  <div class="sec"><div class="sec-t">PANEL ORIENTATION</div><div class="angle-pair"><div class="acard x"><div class="acard-lbl">TILT ANGLE (X-AXIS)</div><div class="acard-val"><span id="out-tilt">--</span>°</div><div class="acard-bar"><div class="acard-fill" id="bar-tilt" style="width:0%"></div></div></div><div class="acard y"><div class="acard-lbl">AZIMUTH (Y-AXIS)</div><div class="acard-val"><span id="out-az">--</span>°</div><div class="acard-bar"><div class="acard-fill" id="bar-az" style="width:0%"></div></div></div></div><div class="sub-row"><span>Target Tilt (90° - Elevation)</span><span id="target-tilt">--</span></div><div class="sub-row"><span>Target Azimuth (Sun Azimuth)</span><span id="target-az">--</span></div><div class="tcard"><div class="tcard-inner"><div class="tcard-ico">🌡️</div><div><div class="tcard-val"><span id="panel-temp">--</span>°C</div></div></div><div class="tcard-eq" id="temp-eq">Panel temperature</div></div><div class="api-ind"><span>Tracking Mode</span><span style="color:var(--grn);" id="tracking-mode-label">Direct Sun Tracking</span></div></div>
+  <div class="sec"><div class="sec-t">ENVIRONMENT</div><div class="cr"><div class="cr-lbl">☀ Irradiance</div><div class="cr-r"><input type="range" id="sl-irr" min="0" max="1200" value="842"><div class="cr-val"><span id="v-irr">842</span> W/m²</div></div></div><div class="cr"><div class="cr-lbl">☁ Cloud Cover</div><div class="cr-r"><input type="range" id="sl-cloud" min="0" max="100" value="35"><div class="cr-val"><span id="v-cloud">35</span>%</div></div></div><div class="cr"><div class="cr-lbl">💨 Wind Speed</div><div class="cr-r"><input type="range" id="sl-wind" min="0" max="20" value="6" step="0.5"><div class="cr-val"><span id="v-wind">6.0</span> m/s</div></div></div><div class="cr"><div class="cr-lbl">🌡 Temperature</div><div class="cr-r"><input type="range" id="sl-temp" min="-10" max="50" value="28"><div class="cr-val"><span id="v-temp">28</span>°C</div></div></div></div>
+  <div class="sec"><div class="sec-t">SUN &amp; TIME</div><div class="cr"><div class="cr-lbl">⏰ Time (Auto)</div><div class="cr-r"><input type="range" id="time-slider" min="0" max="24" step="0.05" value="15.6"></div></div><div class="cr"><div class="cr-lbl"></div><div class="cr-r"><input type="time" id="inp-time" value="15:36"></div></div><div class="cr"><div class="cr-lbl">🧭 Sun Azimuth</div><div class="cr-r"><input type="range" id="man-az" min="0" max="360" value="142" class="sun" disabled><div class="cr-val"><span id="man-az-val">142</span>°</div></div></div><div class="cr"><div class="cr-lbl">📐 Sun Elevation</div><div class="cr-r"><input type="range" id="man-el" min="-10" max="90" value="15" class="sun" disabled><div class="cr-val"><span id="man-el-val">15</span>°</div></div></div><div class="cr"><div class="cr-lbl">📅 Date</div><div class="cr-r"><input type="date" id="inp-date" value="2025-04-22"></div></div><div class="trow"><span>Auto Tracking</span><label class="tog"><input type="checkbox" id="tog-auto" checked><div class="tog-track"></div><div class="tog-thumb"></div></label></div></div>
+  <div class="sec" style="display:flex;gap:8px">
+    <button class="sec-btn" id="reset-btn">↺ RESET TO NOON</button>
+    <button class="sec-btn pri" id="openAnalyticsBtn" style="background:var(--grn); color:#060d14;">📊 OPEN ANALYTICS</button>
+  </div>
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  if (typeof THREE === 'undefined') { document.body.innerHTML = '<div style="color:white;padding:20px">Error: Three.js failed to load.</div>'; return; }
+  // --- Three.js setup (full detailed scene) ---
+  const canvas = document.getElementById('cv');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a1030);
+  scene.fog = new THREE.FogExp2(0x0a1030, 0.008);
+  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 500);
+  camera.position.set(6, 4.5, 8);
+  camera.lookAt(0, 1.3, 0);
+  function resize(){ const vp=document.getElementById('vp'); if(vp){ renderer.setSize(vp.clientWidth,vp.clientHeight); camera.aspect=vp.clientWidth/vp.clientHeight; camera.updateProjectionMatrix(); } }
+  resize(); window.addEventListener('resize',resize);
+  const ambientLight = new THREE.AmbientLight(0x8090c0, 0.6); scene.add(ambientLight);
+  const sunLight = new THREE.DirectionalLight(0xfff5e0, 2.0);
+  sunLight.castShadow=true; sunLight.receiveShadow=true;
+  sunLight.shadow.mapSize.width=1024; sunLight.shadow.mapSize.height=1024;
+  sunLight.target = new THREE.Object3D(); sunLight.target.position.set(0,0,0); scene.add(sunLight.target);
+  scene.add(sunLight);
+  const fillLight = new THREE.PointLight(0x4466cc,0.3); fillLight.position.set(-3,4,5); scene.add(fillLight);
+  const sunMat = new THREE.MeshStandardMaterial({ color:0xffaa66, emissive:0xff4422, emissiveIntensity:0.5 });
+  const sunSphere = new THREE.Mesh(new THREE.SphereGeometry(0.55,64,64), sunMat); scene.add(sunSphere);
+  const glowMat = new THREE.MeshBasicMaterial({ color:0xff8844, transparent:true, opacity:0.25 });
+  const sunGlow = new THREE.Mesh(new THREE.SphereGeometry(0.85,32,32), glowMat); sunSphere.add(sunGlow);
+  const groundMat = new THREE.MeshStandardMaterial({ color:0x2a4a2a, roughness:0.85 });
+  const groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(45,45), groundMat);
+  groundPlane.rotation.x = -Math.PI/2; groundPlane.position.y = -0.25; groundPlane.receiveShadow = true;
+  scene.add(groundPlane);
+  const gridHelper = new THREE.GridHelper(45,25,0x4a8a4a,0x3a6a3a); gridHelper.position.y = -0.2; scene.add(gridHelper);
+  const baseMat = new THREE.MeshStandardMaterial({ color:0x5a6a7a, roughness:0.4, metalness:0.3 });
+  const basePlate = new THREE.Mesh(new THREE.BoxGeometry(1.4,0.2,1.4), baseMat);
+  basePlate.position.set(0,-0.1,0); basePlate.castShadow=true; scene.add(basePlate);
+  const ringMat = new THREE.MeshStandardMaterial({ color:0x7a8a9a, metalness:0.6 });
+  const baseRing = new THREE.Mesh(new THREE.TorusGeometry(0.7,0.05,16,40), ringMat);
+  baseRing.rotation.x = Math.PI/2; baseRing.position.set(0,0,0); baseRing.castShadow=true; scene.add(baseRing);
+  const poleMat = new THREE.MeshStandardMaterial({ color:0x6a7a8a, metalness:0.7, roughness:0.3 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.13,1.8,12), poleMat);
+  pole.position.set(0,0.85,0); pole.castShadow=true; scene.add(pole);
+  const capMat = new THREE.MeshStandardMaterial({ color:0x8a9aaa, metalness:0.8 });
+  const poleCap = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.12,0.08,8), capMat);
+  poleCap.position.set(0,1.75,0); poleCap.castShadow=true; scene.add(poleCap);
+  const azimuthGroup = new THREE.Group(); azimuthGroup.position.set(0,1.85,0); scene.add(azimuthGroup);
+  const tiltGroup = new THREE.Group(); azimuthGroup.add(tiltGroup);
+  const frameMat = new THREE.MeshStandardMaterial({ color:0x7a8a9a, metalness:0.5, roughness:0.3 });
+  const frameBack = new THREE.Mesh(new THREE.BoxGeometry(2.3,0.06,1.5), frameMat);
+  frameBack.castShadow=true; tiltGroup.add(frameBack);
+  const frameSideMat = new THREE.MeshStandardMaterial({ color:0x8a9aaa, metalness:0.6 });
+  const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.12,1.5), frameSideMat);
+  frameLeft.position.set(-1.15,0.03,0); frameLeft.castShadow=true; tiltGroup.add(frameLeft);
+  const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.12,1.5), frameSideMat);
+  frameRight.position.set(1.15,0.03,0); frameRight.castShadow=true; tiltGroup.add(frameRight);
+  const frameTop = new THREE.Mesh(new THREE.BoxGeometry(2.3,0.08,0.1), frameSideMat);
+  frameTop.position.set(0,0.08,0.72); frameTop.castShadow=true; tiltGroup.add(frameTop);
+  const frameBottom = new THREE.Mesh(new THREE.BoxGeometry(2.3,0.08,0.1), frameSideMat);
+  frameBottom.position.set(0,-0.02,0.72); frameBottom.castShadow=true; tiltGroup.add(frameBottom);
+  const cellMat = new THREE.MeshStandardMaterial({ color:0x1a3a6a, metalness:0.15, roughness:0.35, emissive:0x0a2a4a, emissiveIntensity:0.12 });
+  const panelSurface = new THREE.Mesh(new THREE.BoxGeometry(2.18,0.04,1.42), cellMat);
+  panelSurface.position.set(0,0.02,0); panelSurface.castShadow=true; tiltGroup.add(panelSurface);
+  const lineMat = new THREE.MeshStandardMaterial({ color:0x88aacc, metalness:0.3 });
+  for(let i=-4;i<=4;i++){ const line = new THREE.Mesh(new THREE.BoxGeometry(0.012,0.045,1.4), lineMat); line.position.set(i*0.27,0.045,0); line.castShadow=true; tiltGroup.add(line); }
+  for(let j=-2;j<=2;j++){ const line = new THREE.Mesh(new THREE.BoxGeometry(2.2,0.045,0.012), lineMat); line.position.set(0,0.045,j*0.32); line.castShadow=true; tiltGroup.add(line); }
+  const glassMat = new THREE.MeshStandardMaterial({ color:0xaaccff, metalness:0.9, roughness:0.2, transparent:true, opacity:0.15 });
+  const glassCover = new THREE.Mesh(new THREE.BoxGeometry(2.2,0.02,1.44), glassMat);
+  glassCover.position.set(0,0.065,0); glassCover.castShadow=true; tiltGroup.add(glassCover);
+  const bracketMat = new THREE.MeshStandardMaterial({ color:0x6a7a8a, metalness:0.5 });
+  const bracketL = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.15,0.12), bracketMat);
+  bracketL.position.set(-0.7,-0.08,0); bracketL.castShadow=true; tiltGroup.add(bracketL);
+  const bracketR = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.15,0.12), bracketMat);
+  bracketR.position.set(0.7,-0.08,0); bracketR.castShadow=true; tiltGroup.add(bracketR);
+  const starGeometry = new THREE.BufferGeometry();
+  const starCount = 1000;
+  const starPositions = new Float32Array(starCount*3);
+  for(let i=0;i<starCount;i++){ starPositions[i*3]=(Math.random()-0.5)*400; starPositions[i*3+1]=(Math.random()-0.5)*80+15; starPositions[i*3+2]=(Math.random()-0.5)*200-100; }
+  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions,3));
+  const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color:0xffffff, size:0.06 }));
+  scene.add(stars);
+  const cloudGroup = new THREE.Group(); scene.add(cloudGroup);
+  const clouds = [];
+  function createCloud(x,z){ const cloudMat=new THREE.MeshStandardMaterial({ color:0xccddee, transparent:true, opacity:0.6 }); const g=new THREE.Group(); const parts=[[0,0,0,0.5],[0.5,0.08,0.3,0.4],[-0.45,0.05,-0.2,0.38],[0.25,0.12,0.4,0.32],[-0.3,0.1,-0.35,0.32]]; parts.forEach(p=>{ const part=new THREE.Mesh(new THREE.SphereGeometry(p[3],10,10), cloudMat); part.position.set(p[0],p[1],p[2]); g.add(part); }); g.position.set(x,5+Math.random()*2.5,z); return g; }
+  for(let i=0;i<12;i++){ const cloud=createCloud((Math.random()-0.5)*32,(Math.random()-0.5)*28); cloudGroup.add(cloud); clouds.push({mesh:cloud, speed:0.15+Math.random()*0.25}); }
+  let camTheta=0.75, camPhi=0.58, camR=9.5, isDragging=false, lastX=0, lastY=0;
+  canvas.addEventListener('mousedown',(e)=>{ isDragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor='grabbing'; });
+  window.addEventListener('mousemove',(e)=>{ if(!isDragging) return; const dx=e.clientX-lastX, dy=e.clientY-lastY; camTheta+=dx*0.007; camPhi=Math.max(0.2,Math.min(1.3,camPhi+dy*0.007)); lastX=e.clientX; lastY=e.clientY; });
+  window.addEventListener('mouseup',()=>{ isDragging=false; canvas.style.cursor='default'; });
+  canvas.addEventListener('wheel',(e)=>{ camR=Math.max(5,Math.min(15,camR+e.deltaY*0.008)); e.preventDefault(); }, {passive:false});
+  // --- Simulation state ---
+  let sunAzimuth=142, sunElevation=15, autoMode=true, simTime=15.6;
+  let currentPanelAz=142, currentPanelTilt=75, targetPanelAz=142, targetPanelTilt=75;
+  let irradiance=842, cloudCover=35, windSpeed=6, ambientTempBase=24, ambientTemp=28;
+  let panelTemp=28;
+  let mlData = { tilt:null, hybrid:null, spa:null, ghi:null, source:"offline", is_anomaly:false, is_stow:false, is_night:false, dni_wm2:0, theoretical_power_w:0, performance_ratio:0, anomaly_type:"NORMAL", aoi_deg:0 };
+  const WIND_STOW_THRESHOLD = 15.0; // m/s
+  const ML_API_URL = "http://localhost:5050/predict";
+  const NOCT = 44.0; // Nominal Operating Cell Temperature (deg C)
+  // ---- DIURNAL AMBIENT TEMPERATURE MODEL ----
+  // Bhubaneswar (April) typical: ~24°C overnight min, ~36°C afternoon peak
+  // Formula: T(t) = T_base + T_range/2 * (1 - cos(2*pi*(t - t_trough)/24))
+  //   At t=t_trough (03:00): cos(0)=1 -> T_base (daily minimum) ✓
+  //   At t=t_trough+12 (15:00): cos(pi)=-1 -> T_base + T_range (daily max) ✓
+  function computeAmbientTemp(hour) {
+    const T_range  = 12.0;  // typical diurnal swing in tropical India (°C)
+    const t_trough = 3.0;   // 03:00 = coldest hour; peak at 15:00 = 3 PM ✓
+    const phase = 2 * Math.PI * (hour - t_trough) / 24.0;
+    const T = ambientTempBase + (T_range / 2) * (1 - Math.cos(phase));
+    return Math.round(T * 10) / 10;
+  }
+  // ---- PHYSICS: Beer-Lambert clear-sky irradiance model ----
+  // Automatically computes GHI from solar elevation + cloud cover.
+  // This is the Single Source of Truth for irradiance — the slider becomes a display.
+  function computeIrradiance(sunElevDeg, cloudPct) {
+    if (sunElevDeg <= 0) return 0;
+    const el  = Math.max(0.5, sunElevDeg);
+    const elR = el * Math.PI / 180;
+    // Kasten-Young air mass
+    const am  = Math.min(38, 1.0 / (Math.sin(elR) + 0.50572 * Math.pow(el + 6.07995, -1.6364)));
+    // Beam transmittance (simplified Bird model)
+    const tau = Math.pow(0.70, Math.pow(am, 0.678));
+    // Extraterrestrial irradiance (DOY-corrected via current month)
+    const doy = Math.floor((Date.now() - new Date(new Date().getFullYear(),0,0)) / 86400000);
+    const B   = (360/365)*(doy-1)*Math.PI/180;
+    const G0  = 1361 * (1.000110 + 0.034221*Math.cos(B) + 0.001280*Math.sin(B));
+    const DNI = G0 * tau;
+    const DHI = 0.1 * G0 * Math.sin(elR);
+    const GHI_clear = DNI * Math.sin(elR) + DHI;
+    // Kaplanis cloud attenuation
+    const cf  = Math.max(0, Math.min(1, cloudPct / 100.0));
+    const att = 1.0 - 0.72 * Math.pow(cf, 3.2);
+    return Math.max(0, Math.round(GHI_clear * att));
+  }
+  function updateIrradianceFromPhysics() {
+    irradiance = computeIrradiance(sunElevation, cloudCover);
+    const slIrr = document.getElementById('sl-irr');
+    if (slIrr) slIrr.value = irradiance;
+  }
+  function updateSunFromTime(){
+    if(simTime<6||simTime>18){ sunElevation=-5; sunAzimuth=180; }
+    else{ const t=(simTime-6)/12; sunElevation=68*Math.sin(Math.PI*t); sunAzimuth=90+(simTime-6)*15; }
+    if(sunAzimuth<0)sunAzimuth+=360; if(sunAzimuth>=360)sunAzimuth-=360;
+    sunElevation=Math.max(-5,Math.min(90,sunElevation));
+    // NOTE: irradiance slider is the user's clear-sky setting.
+    // Nighttime physics enforcement happens inside effIrr calculations,
+    // NOT here — mutating the slider causes permanent data loss when day resumes.
+    updateIrradianceFromPhysics();
+    // Cascade: time change -> diurnal ambient temp -> panel temp (NOCT)
+    ambientTemp = computeAmbientTemp(simTime);
+    const slTemp = document.getElementById('sl-temp');
+    if(slTemp) slTemp.value = ambientTemp;
+    document.getElementById('man-az').value=sunAzimuth;
+    document.getElementById('man-az-val').innerText=sunAzimuth.toFixed(1);
+    document.getElementById('man-el').value=sunElevation;
+    document.getElementById('man-el-val').innerText=sunElevation.toFixed(1);
+  }
+  function updatePanelTargets(){
+    // WIND STOW: override all tracking, flatten panel to 0 deg
+    if(windSpeed >= WIND_STOW_THRESHOLD){
+      targetPanelTilt = 0;
+      // targetPanelAz stays where it is (face into wind for minimum drag)
+      document.getElementById('stow-banner').style.display = 'block';
+      document.getElementById('app').classList.add('stow');
+      document.getElementById('hdr-status').innerText = 'WIND STOW ACTIVE';
+      document.getElementById('hdr-dot').style.background = 'var(--sun)';
+      return;
+    } else {
+      document.getElementById('stow-banner').style.display = 'none';
+      document.getElementById('app').classList.remove('stow');
+    }
+    if(autoMode){ targetPanelAz=sunAzimuth; targetPanelTilt=90-sunElevation; }
+    else{ let manAz=parseFloat(document.getElementById('man-az').value); let manEl=parseFloat(document.getElementById('man-el').value);
+      targetPanelAz=manAz; targetPanelTilt=90-manEl; sunAzimuth=manAz; sunElevation=manEl; }
+    targetPanelTilt=Math.max(0,Math.min(90,targetPanelTilt));
+  }
+  function applyPanelRotations(dt){
+    const lerp=Math.min(1,dt*5);
+    currentPanelAz+=(targetPanelAz-currentPanelAz)*lerp;
+    currentPanelTilt+=(targetPanelTilt-currentPanelTilt)*lerp;
+    currentPanelAz=((currentPanelAz%360)+360)%360;
+    azimuthGroup.rotation.y = -currentPanelAz * Math.PI/180;
+    tiltGroup.rotation.x = -currentPanelTilt * Math.PI/180;
+  }
+  function updateSunPosition3D(){
+    const azRad = sunAzimuth * Math.PI/180, elRad = sunElevation * Math.PI/180;
+    // R=13 keeps the sun sphere inside the camera frustum even at high elevations
+    const R=13;
+    const x=R*Math.sin(azRad)*Math.cos(elRad), y=R*Math.sin(elRad), z=-R*Math.cos(azRad)*Math.cos(elRad);
+    sunSphere.position.set(x,y,z);
+    sunLight.position.set(x,y,z);
+    sunLight.target.updateMatrixWorld();
+    const isNight = sunElevation <= 0;
+    const sb = Math.max(0, Math.sin(elRad));
+    // Light intensities: physically correct, bright enough for afternoon sun at elev 29+
+    const cloudAtt = 1.0 - (cloudCover / 100.0) * 0.72;
+    sunLight.intensity     = isNight ? 0.0 : (0.3 + sb * 2.0) * cloudAtt;
+    ambientLight.intensity = isNight ? 0.04 : (0.35 + sb * 0.55) * cloudAtt;
+    // Sky gradient: sunset orange at horizon (sb≈0) → deep blue at zenith (sb≈1)
+    if(isNight){
+      scene.background.setRGB(0.012, 0.023, 0.078);
+      document.getElementById('night-overlay').style.display='block';
+      sunSphere.visible = false;
+    } else {
+      // Perceptually correct sky: warm gold at low elev, blue-white at zenith
+      const skyR = Math.min(1, 0.20 + sb*0.40 + (1-sb)*0.70);
+      const skyG = Math.min(1, 0.35 + sb*0.45 + (1-sb)*0.25);
+      const skyB = Math.min(1, 0.45 + sb*0.45 + (1-sb)*0.05);
+      scene.background.setRGB(skyR * cloudAtt + 0.15*(1-cloudAtt),
+                               skyG * cloudAtt + 0.15*(1-cloudAtt),
+                               skyB * cloudAtt + 0.20*(1-cloudAtt));
+      if(scene.fog) scene.fog.color.setRGB(skyR*0.7, skyG*0.7, skyB*0.7);
+      document.getElementById('night-overlay').style.display='none';
+      sunSphere.visible = true;
+      // Sun disc color: deep orange near horizon → yellow-white at zenith
+      const t = Math.min(1.0, sunElevation / 45);
+      sunMat.color.setRGB(1.0, 0.50 + t*0.40, t*0.30);
+      sunMat.emissive.setRGB(1.0, 0.35 + t*0.45, t*0.25);
+      sunMat.emissiveIntensity = 1.2 + (1.0-t)*0.8;
+    }
+    stars.visible = isNight || sunElevation < 8;
+  }
+  function updateUI(){
+    document.getElementById('h-az').innerText=sunAzimuth.toFixed(1);
+    document.getElementById('h-el').innerText=sunElevation.toFixed(1);
+    document.getElementById('out-tilt').innerText=currentPanelTilt.toFixed(1);
+    document.getElementById('out-az').innerText=currentPanelAz.toFixed(1);
+    document.getElementById('ml-tilt').innerText=currentPanelTilt.toFixed(1)+'°';
+    document.getElementById('ml-az').innerText=currentPanelAz.toFixed(1)+'°';
+    document.getElementById('bar-tilt').style.width=(currentPanelTilt/90*100)+'%';
+    document.getElementById('bar-az').style.width=(currentPanelAz/360*100)+'%';
+    document.getElementById('target-tilt').innerText=targetPanelTilt.toFixed(1)+'°';
+    document.getElementById('target-az').innerText=targetPanelAz.toFixed(1)+'°';
+    document.getElementById('ml-formula').innerHTML = `Tilt = 90° - ${sunElevation.toFixed(1)}° = ${targetPanelTilt.toFixed(1)}° | Az = ${sunAzimuth.toFixed(1)}°`;
+    
+    // Tracking Error Calculation
+    let tiltErr = Math.abs(currentPanelTilt - targetPanelTilt);
+    let azErr = Math.abs(currentPanelAz - targetPanelAz);
+    if(azErr>180) azErr=360-azErr;
+    let totalErr = Math.sqrt(tiltErr*tiltErr + azErr*azErr);
+    document.getElementById('h-err').innerText=totalErr.toFixed(1);
+
+    const hours=Math.floor(simTime), minutes=Math.floor((simTime-hours)*60);
+    const timeStr=String(hours).padStart(2,'0')+':'+String(minutes).padStart(2,'0');
+    document.getElementById('h-time').innerText=timeStr;
+    document.getElementById('inp-time').value=timeStr;
+    document.getElementById('time-slider').value=simTime;
+    document.getElementById('compass-needle').setAttribute('transform', 'rotate('+sunAzimuth+' 40 40)');
+    // effIrr: Kaplanis cloud attenuation (same model as api_server.py)
+    const sunFactor = Math.max(0, Math.sin(sunElevation*Math.PI/180));
+    const cloudFrac = cloudCover / 100.0;
+    const cloudAtt2 = 1.0 - 0.72 * Math.pow(cloudFrac, 3.2);
+    const effIrr = irradiance * sunFactor * cloudAtt2;
+    // NOCT cell temperature model (matches api_server.py exactly):
+    // T_cell = T_amb + (NOCT-20)/800 * GHI_eff - wind_cooling
+    // Wind cooling only activates above 1 m/s; clamped to prevent sub-ambient result
+    const windCooling = Math.max(0, (windSpeed - 1.0) * 1.5);
+    panelTemp = ambientTemp + ((NOCT - 20) / 800) * effIrr - windCooling;
+    panelTemp = Math.max(ambientTemp, Math.min(90, panelTemp));
+    // Environmental anomaly flag: local check (also sent to API)
+    const envFault = panelTemp > 85.0;
+    if(envFault && !mlData.is_anomaly) {
+      document.getElementById('app').classList.add('anomaly');
+      document.getElementById('hdr-status').innerText = 'ENV FAULT: OVER-TEMP';
+      document.getElementById('hdr-dot').style.background = 'var(--err)';
+    }
+    document.getElementById('panel-temp').innerText=panelTemp.toFixed(1);
+    document.getElementById('temp-eq').innerHTML = ambientTemp.toFixed(1)+'°C + ('+effIrr.toFixed(0)+'×0.030) − (wind_cool) = '+panelTemp.toFixed(1)+'°C';
+    document.getElementById('v-irr').innerText=irradiance;
+    document.getElementById('v-cloud').innerText=cloudCover;
+    document.getElementById('v-wind').innerText=windSpeed.toFixed(1);
+    document.getElementById('v-temp').innerText=ambientTemp.toFixed(1);
+  }
+  async function fetchMLPrediction() {
+    if(!autoMode) return;
+    try {
+      const body = {
+        hour:simTime,
+        month: new Date().getMonth()+1,
+        doy: Math.floor((Date.now() - new Date(new Date().getFullYear(),0,0)) / 86400000),
+        sunElevation:sunElevation, sunAzimuth:sunAzimuth,
+        temp:ambientTemp, wind:windSpeed,
+        irradiance:irradiance, cloud:cloudCover,
+        ghiLag1:irradiance*0.9, ghiLag2:irradiance*0.88, ghiLag3:irradiance*0.85, ghiLag24:irradiance*0.6,
+        dniLag1:irradiance*0.7, dniLag2:irradiance*0.68, dniLag3:irradiance*0.65, dniLag24:irradiance*0.45
+      };
+      
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 5000); // 5s — enough for first cold-start
+      const res = await fetch(ML_API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal: controller.signal });
+      clearTimeout(id);
+      
+      if(!res.ok) throw new Error();
+      const data = await res.json();
+      mlData = { tilt:data.tilt_deg, hybrid:data.hybrid_tilt, spa:data.spa_tilt, ghi:data.ghi_wm2,
+        source:data.source, is_anomaly:data.is_anomaly, is_stow:data.is_stow, is_night:data.is_night,
+        dni_wm2:data.dni_wm2||0, theoretical_power_w:data.theoretical_power_w||0,
+        performance_ratio:data.performance_ratio||0, temp_derating_pct:data.temp_derating_pct||0,
+        anomaly_type:data.anomaly_type||'NORMAL', aoi_deg:data.aoi_deg||0 };
+      document.getElementById('api-status').innerHTML = 'ML ACTIVE ('+mlData.source+')';
+      document.getElementById('api-dot').style.background = 'var(--grn)';
+      document.getElementById('api-dot').style.boxShadow = '0 0 5px var(--grn)';
+      document.getElementById('tracking-mode-label').innerHTML = 'ML Hybrid Tracking ✓';
+      
+      if(mlData.is_anomaly){
+          document.getElementById('app').classList.add('anomaly');
+          document.getElementById('ml-anomaly').innerText = 'DETECTED';
+          document.getElementById('ml-anomaly').style.color = 'var(--err)';
+          document.getElementById('hdr-status').innerText = 'ANOMALY DETECTED';
+          document.getElementById('hdr-dot').style.background = 'var(--err)';
+      }else{
+          document.getElementById('app').classList.remove('anomaly');
+          document.getElementById('ml-anomaly').innerText = 'NORMAL';
+          document.getElementById('ml-anomaly').style.color = 'var(--grn)';
+          document.getElementById('hdr-status').innerText = 'TRACKING ACTIVE';
+          document.getElementById('hdr-dot').style.background = 'var(--grn)';
+      }
+    } catch(err) {
+      console.warn("ML API Offline: ", err);
+      mlData = { tilt:null, hybrid:null, spa:null, ghi:null, source:'offline', is_anomaly:false };
+      document.getElementById('api-status').innerHTML = 'DIRECT TRACKING (API offline)';
+      document.getElementById('api-dot').style.background = 'var(--sun)';
+      document.getElementById('api-dot').style.boxShadow = '0 0 5px var(--sun)';
+      document.getElementById('tracking-mode-label').innerHTML = 'Direct Sun Tracking';
+      document.getElementById('app').classList.remove('anomaly');
+      document.getElementById('ml-anomaly').innerText = 'OFFLINE';
+      document.getElementById('ml-anomaly').style.color = 'var(--mid)';
+    }
+  }
+  let lastBroadcast=0;
+  function broadcastState(){
+    const now=Date.now();
+    if(now-lastBroadcast>=1000){
+      lastBroadcast=now;
+      const state = {
+        timestamp:new Date().toISOString(),
+        sunAz:sunAzimuth, sunEl:sunElevation,
+        panelTilt:currentPanelTilt, panelAz:currentPanelAz,
+        irradiance:irradiance, cloud:cloudCover, wind:windSpeed, temp:ambientTemp, panelTemp:panelTemp,
+        mlTilt:mlData.tilt, hybridTilt:mlData.hybrid, spaTilt:mlData.spa, mlGhi:mlData.ghi, mlSource:mlData.source,
+        isAnomaly:mlData.is_anomaly, anomalyType:mlData.anomaly_type, aoiDeg:mlData.aoi_deg,
+        isStow:mlData.is_stow, isNight:mlData.is_night,
+        dniWm2:mlData.dni_wm2, theoreticalPowerW:mlData.theoretical_power_w,
+        performanceRatio:mlData.performance_ratio, tempDeratingPct:mlData.temp_derating_pct
+      };
+      localStorage.setItem('solarTrackerState', JSON.stringify(state));
+    }
+    requestAnimationFrame(broadcastState);
+  }
+  let lastTime=Date.now();
+  function animate(){
+    const now=Date.now(); let dt=Math.min((now-lastTime)/1000,0.033); lastTime=now;
+    if(autoMode){ simTime+=dt*0.01; if(simTime>=24) simTime-=24; updateSunFromTime(); }
+    updatePanelTargets(); applyPanelRotations(dt); updateSunPosition3D();
+    clouds.forEach(c=>{ c.mesh.position.x+=c.speed*dt; if(c.mesh.position.x>28)c.mesh.position.x=-28; });
+    stars.rotation.y+=0.0003; updateUI();
+    const camX=camR*Math.sin(camTheta)*Math.cos(camPhi), camY=camR*Math.sin(camPhi), camZ=camR*Math.cos(camTheta)*Math.cos(camPhi);
+    camera.position.set(camX,camY+1.2,camZ); camera.lookAt(0,1.3,0);
+    renderer.render(scene,camera);
+    requestAnimationFrame(animate);
+  }
+  function initEventHandlers(){
+    document.getElementById('btn-auto').addEventListener('click',()=>{
+      autoMode=true; document.getElementById('btn-auto').classList.add('on'); document.getElementById('btn-manual').classList.remove('on');
+      document.getElementById('tog-auto').checked=true; document.getElementById('time-slider').disabled=false; document.getElementById('inp-time').disabled=false;
+      document.getElementById('man-az').disabled=true; document.getElementById('man-el').disabled=true;
+      updateSunFromTime();
+    });
+    document.getElementById('btn-manual').addEventListener('click',()=>{
+      autoMode=false; document.getElementById('btn-manual').classList.add('on'); document.getElementById('btn-auto').classList.remove('on');
+      document.getElementById('tog-auto').checked=false; document.getElementById('time-slider').disabled=true; document.getElementById('inp-time').disabled=true;
+      document.getElementById('man-az').disabled=false; document.getElementById('man-el').disabled=false;
+      updatePanelTargets();
+    });
+    document.getElementById('tog-auto').addEventListener('change',(e)=>{ if(e.target.checked) document.getElementById('btn-auto').click(); else document.getElementById('btn-manual').click(); });
+    document.getElementById('time-slider').addEventListener('input',(e)=>{ if(autoMode){ simTime=parseFloat(e.target.value); updateSunFromTime(); } });
+    document.getElementById('inp-time').addEventListener('change',(e)=>{ if(autoMode){ const [h,m]=e.target.value.split(':').map(Number); simTime=h+m/60; updateSunFromTime(); } });
+    document.getElementById('man-az').addEventListener('input',(e)=>{ if(!autoMode){ document.getElementById('man-az-val').innerText=parseFloat(e.target.value).toFixed(1); updatePanelTargets(); } });
+    document.getElementById('man-el').addEventListener('input',(e)=>{ if(!autoMode){ document.getElementById('man-el-val').innerText=parseFloat(e.target.value).toFixed(1); updatePanelTargets(); } });
+    document.getElementById('sl-irr').addEventListener('input',(e)=>{
+      // When user manually drags the irradiance slider, break auto-physics-sync for that value
+      // (auto-sync will resume when time changes next)
+      irradiance = parseFloat(e.target.value);
+    });
+    document.getElementById('sl-cloud').addEventListener('input',(e)=>{
+      cloudCover = parseFloat(e.target.value);
+      updateIrradianceFromPhysics(); // recalculate irradiance when cloud changes
+    });
+    document.getElementById('sl-wind').addEventListener('input',(e)=>{ windSpeed=parseFloat(e.target.value); });
+    document.getElementById('sl-temp').addEventListener('input',(e)=>{
+      // User drags temp slider = sets the DAILY MINIMUM (diurnal base)
+      ambientTempBase = parseFloat(e.target.value);
+      // Immediately cascade: recompute diurnal ambient and panel temp
+      ambientTemp = computeAmbientTemp(simTime);
+    });
+    document.getElementById('reset-btn').addEventListener('click',()=>{
+      simTime=12; updateSunFromTime(); autoMode=true; document.getElementById('btn-auto').click();
+      document.getElementById('time-slider').value=12; document.getElementById('inp-time').value='12:00';
+      irradiance=842; cloudCover=35; windSpeed=6; ambientTempBase=24; ambientTemp=computeAmbientTemp(12);
+      document.getElementById('sl-irr').value=842; document.getElementById('sl-cloud').value=35;
+      document.getElementById('sl-wind').value=6; document.getElementById('sl-temp').value=28;
+      document.getElementById('man-az').value=180; document.getElementById('man-az-val').innerText='180';
+      document.getElementById('man-el').value=68; document.getElementById('man-el-val').innerText='68';
+      updatePanelTargets();
+    });
+    document.getElementById('openAnalyticsBtn').addEventListener('click',()=>{ window.open('analytics.html', '_blank'); });
+    setInterval(()=>{ fetchMLPrediction(); }, 2000);
+  }
+  initEventHandlers();
+  updateSunFromTime();
+  animate();
+  broadcastState();
+})();
+</script>
+</body>
+</html>

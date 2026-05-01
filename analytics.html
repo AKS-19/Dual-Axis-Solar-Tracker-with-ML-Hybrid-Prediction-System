@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Analytics | Solar Tracker</title>
+    <meta name="description" content="Real-time power analytics dashboard for 2-axis solar tracker with ML hybrid predictions.">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap');
+        :root {
+            --bg:#050b14;--surf:#0a1628;--card:#0d1e36;--b0:#1a365d;--b1:#2a4365;
+            --acc:#00f0ff;--sun:#ffd700;--warm:#ff5722;--grn:#00e676;--err:#ff1744;--prp:#a855f7;
+            --mid:#64748b;--hi:#e2e8f0;--mono:'Share Tech Mono',monospace;--sans:'Rajdhani',sans-serif;
+        }
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{background:var(--bg);color:var(--hi);font-family:var(--sans);padding:14px;min-height:100vh;}
+        .dashboard{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:14px;}
+
+        /* Header */
+        .header{display:flex;justify-content:space-between;align-items:center;background:var(--surf);border:1px solid var(--b0);padding:14px 24px;border-radius:8px;}
+        h1{color:var(--acc);font-size:22px;font-weight:700;letter-spacing:3px;text-transform:uppercase;text-shadow:0 0 12px rgba(0,240,255,0.35);}
+        .status-pill{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;padding:5px 14px;border-radius:20px;border:1px solid var(--grn);background:rgba(0,230,118,0.08);color:var(--grn);}
+        .status-pill.warn{border-color:var(--sun);background:rgba(255,215,0,0.08);color:var(--sun);}
+        .status-pill.danger{border-color:var(--err);background:rgba(255,23,68,0.08);color:var(--err);animation:blink 1.5s infinite;}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0.5}}
+        .dot-live{width:7px;height:7px;background:currentColor;border-radius:50%;box-shadow:0 0 6px currentColor;animation:pulse 2s infinite;}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+        /* Alert banner */
+        .alert-bar{display:none;padding:12px 20px;border-radius:7px;font-weight:600;letter-spacing:1px;font-size:13px;}
+        .alert-bar.anomaly{display:block;background:rgba(255,23,68,0.1);border:1px solid var(--err);color:var(--err);animation:blink 2s infinite;}
+        .alert-bar.stow{display:block;background:rgba(255,215,0,0.1);border:1px solid var(--sun);color:var(--sun);}
+        .alert-bar.night{display:block;background:rgba(168,85,247,0.08);border:1px solid var(--prp);color:var(--prp);}
+
+        /* KPI grid */
+        .grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;}
+        .card{background:var(--card);border:1px solid var(--b1);border-radius:8px;padding:15px;position:relative;overflow:hidden;}
+        .card::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;}
+        .card.c-acc::before{background:var(--acc);box-shadow:0 0 8px var(--acc);}
+        .card.c-sun::before{background:var(--sun);box-shadow:0 0 8px var(--sun);}
+        .card.c-grn::before{background:var(--grn);box-shadow:0 0 8px var(--grn);}
+        .card.c-err::before{background:var(--err);box-shadow:0 0 8px var(--err);}
+        .card.c-prp::before{background:var(--prp);box-shadow:0 0 8px var(--prp);}
+        .card h3{font-size:11px;color:var(--mid);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;padding-bottom:7px;border-bottom:1px solid var(--b0);display:flex;justify-content:space-between;align-items:center;}
+        .big-num{font-family:var(--mono);font-size:34px;font-weight:700;line-height:1;margin-bottom:10px;}
+        .big-unit{font-family:var(--sans);font-size:14px;color:var(--mid);margin-left:5px;}
+        .big-num.acc{color:var(--acc);text-shadow:0 0 8px rgba(0,240,255,0.3);}
+        .big-num.sun{color:var(--sun);}
+        .big-num.grn{color:var(--grn);}
+        .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;font-size:13px;}
+        .rl{color:var(--mid);}
+        .rv{font-family:var(--mono);color:var(--hi);}
+        .rv.warn{color:var(--sun);}
+        .rv.ok{color:var(--grn);}
+        .bar-wrap{background:var(--b0);height:5px;border-radius:3px;overflow:hidden;margin:3px 0 8px;}
+        .bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
+
+        /* Charts */
+        .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px;}
+        canvas{width:100%!important;height:200px!important;display:block;margin-top:8px;}
+
+        /* Controls */
+        .controls{display:flex;gap:10px;background:var(--surf);padding:11px;border:1px solid var(--b0);border-radius:8px;align-items:center;flex-wrap:wrap;}
+        button{background:var(--card);border:1px solid var(--b1);color:var(--hi);padding:7px 15px;border-radius:5px;font-family:var(--sans);font-weight:600;font-size:12px;cursor:pointer;transition:all .2s;text-transform:uppercase;letter-spacing:1px;}
+        button:hover{border-color:var(--acc);color:var(--acc);}
+        button.primary{background:rgba(0,240,255,0.08);border-color:var(--acc);color:var(--acc);}
+        .note{font-size:11px;color:var(--mid);font-family:var(--mono);}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="dashboard">
+    <div class="header">
+        <h1>&#x26A1; POWER ANALYTICS</h1>
+        <div class="status-pill" id="connPill"><div class="dot-live"></div><span id="connText">AWAITING TELEMETRY</span></div>
+    </div>
+
+    <div class="alert-bar" id="alertAnomaly">
+        <span id="anomalyIcon">&#x26A0;</span> <strong id="anomalyTitle">ANOMALY DETECTED</strong> &mdash;
+        <span id="anomalyDesc">Efficiency drop outside normal operating envelope. Check panel surface, temperature sensors, and mechanical alignment.</span>
+    </div>
+    <div class="alert-bar stow" id="alertStow" style="display:none">&#x26A0; WIND STOW MODE &mdash; Wind speed exceeded 15 m/s. Panel parked flat (0&deg; tilt) to prevent mechanical damage.</div>
+    <div class="alert-bar night" id="alertNight" style="display:none">&#x1F319; NIGHT MODE &mdash; Sun below horizon. GHI/DNI = 0 W/m&sup2;. Power generation = 0 W.</div>
+
+    <div class="grid4">
+        <div class="card c-acc">
+            <h3>POWER OUTPUT <span id="srcBadge" style="color:var(--acc);font-size:10px;">---</span></h3>
+            <div class="big-num acc" id="actualPwr">0.0<span class="big-unit">W</span></div>
+            <div class="row"><span class="rl">Theoretical Max</span><span class="rv" id="theoPwr">0.0 W</span></div>
+            <div class="row"><span class="rl">Performance Ratio</span><span class="rv ok" id="perfRatio">0.0 %</span></div>
+            <div class="row"><span class="rl">Daily Yield</span><span class="rv" id="dailyYield">0.0000 kWh</span></div>
+        </div>
+        <div class="card c-sun">
+            <h3>IRRADIANCE &amp; ENVIRONMENT</h3>
+            <div class="big-num sun" id="ghiVal">0<span class="big-unit">W/m&sup2; GHI</span></div>
+            <div class="row"><span class="rl">Direct Normal (DNI)</span><span class="rv" id="dniVal">0 W/m&sup2;</span></div>
+            <div class="row"><span class="rl">Panel Temperature</span><span class="rv warn" id="pTempVal">-- &deg;C</span></div>
+            <div class="row"><span class="rl">Wind Load</span><span class="rv" id="windVal">-- m/s</span></div>
+            <div class="row"><span class="rl">Cloud Cover</span><span class="rv" id="cloudVal">-- %</span></div>
+        </div>
+        <div class="card c-grn">
+            <h3>KINEMATICS &amp; TRACKING</h3>
+            <div class="big-num grn" id="trkErr">0.0<span class="big-unit">&deg; ERROR</span></div>
+            <div class="row"><span class="rl">Azimuth (Yaw)</span><span class="rv" id="azVal">--&deg;</span></div>
+            <div class="row"><span class="rl">Tilt (Pitch)</span><span class="rv" id="tiltVal">--&deg;</span></div>
+            <div class="row"><span class="rl">Target Tilt (SPA)</span><span class="rv" id="spaVal">--&deg;</span></div>
+            <div class="row"><span class="rl">ML Hybrid Tilt</span><span class="rv ok" id="hybridVal">--&deg;</span></div>
+            <div class="row"><span class="rl">Angle of Incidence</span><span class="rv" id="aoiVal">--&deg;</span></div>
+        </div>
+        <div class="card c-err">
+            <h3>EFFICIENCY DERATING</h3>
+            <div class="row"><span class="rl">Temperature Derating</span><span class="rv warn" id="tDerPct">0.0 %</span></div>
+            <div class="bar-wrap"><div class="bar-fill" id="barTDer" style="background:var(--err);width:0%"></div></div>
+            <div class="row"><span class="rl">Cosine Angle Loss</span><span class="rv" id="lossAngle">0.0 W</span></div>
+            <div class="bar-wrap"><div class="bar-fill" id="barAngle" style="background:var(--warm);width:0%"></div></div>
+            <div class="row"><span class="rl">Cloud Scatter Loss</span><span class="rv" id="lossCloud">0.0 W</span></div>
+            <div class="bar-wrap"><div class="bar-fill" id="barCloud" style="background:var(--mid);width:0%"></div></div>
+        </div>
+    </div>
+
+    <div class="grid3">
+        <div class="card"><h3>POWER vs TIME <span style="color:var(--mid);font-size:10px">(Actual vs Max)</span></h3><canvas id="cPwr"></canvas></div>
+        <div class="card"><h3>PERFORMANCE RATIO <span style="color:var(--mid);font-size:10px">(%)</span></h3><canvas id="cPR"></canvas></div>
+        <div class="card"><h3>SYSTEM TRACKING ERROR <span style="color:var(--mid);font-size:10px">(&deg; deviation)</span></h3><canvas id="cErr"></canvas></div>
+        <div class="card"><h3>IRRADIANCE &mdash; GHI vs DNI <span style="color:var(--mid);font-size:10px">(W/m&sup2;)</span></h3><canvas id="cIrr"></canvas></div>
+        <div class="card"><h3>THERMAL PROFILE <span style="color:var(--mid);font-size:10px">(Panel &deg;C vs Derating %)</span></h3><canvas id="cTherm"></canvas></div>
+    </div>
+
+    <div class="controls">
+        <button class="primary" id="btnExport">&#x1F4E5; Export CSV</button>
+        <button id="btnReset">&#x1F5D1; Flush Buffer</button>
+        <span style="flex:1"></span>
+        <span class="note">BUFFER: <span id="bufSize">0</span>/120 pts &nbsp;|&nbsp; SAMPLING: 1 Hz</span>
+    </div>
+</div>
+
+<script>
+// ============================================================
+//  CONSTANTS & CONFIG
+// ============================================================
+const PANEL_AREA  = 1.6;   // m^2
+const EFF_STC     = 0.20;  // efficiency at STC
+const TEMP_COEFF  = 0.004; // /degC
+const MAX_BUFFER  = 120;   // max data points to prevent memory leak
+
+Chart.defaults.color = '#64748b';
+Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.animation = false;
+
+const gridColor = '#1a365d';
+const baseOpts = {
+    responsive:true, maintainAspectRatio:false,
+    animation:false,
+    elements:{ point:{radius:0}, line:{tension:0.3,borderWidth:1.8} },
+    scales:{
+        x:{ grid:{color:gridColor}, ticks:{maxTicksLimit:8, font:{size:10}} },
+        y:{ grid:{color:gridColor}, beginAtZero:true, ticks:{font:{size:10}} }
+    },
+    plugins:{ legend:{ display:true, labels:{color:'#e2e8f0', usePointStyle:true, boxWidth:6, font:{size:10}} } }
+};
+const dualYOpts = { ...baseOpts,
+    scales:{ ...baseOpts.scales,
+        y:{ type:'linear', position:'left',  grid:{color:gridColor}, ticks:{font:{size:10}} },
+        y1:{type:'linear', position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:10}} }
+    }
+};
+
+// ============================================================
+//  CHART INIT
+// ============================================================
+let charts = {};
+function initCharts() {
+    charts.pwr = new Chart(document.getElementById('cPwr').getContext('2d'), { type:'line',
+        data:{ labels:[], datasets:[
+            {label:'Actual (W)', data:[], borderColor:'#00f0ff', backgroundColor:'rgba(0,240,255,0.07)', fill:true},
+            {label:'Max (W)',    data:[], borderColor:'#1a365d', borderDash:[5,5]}
+        ]}, options:baseOpts });
+
+    charts.pr = new Chart(document.getElementById('cPR').getContext('2d'), { type:'line',
+        data:{ labels:[], datasets:[
+            {label:'PR (%)', data:[], borderColor:'#00e676', backgroundColor:'rgba(0,230,118,0.07)', fill:true}
+        ]}, options:{...baseOpts, scales:{...baseOpts.scales, y:{...baseOpts.scales.y, max:100}}} });
+
+    charts.err = new Chart(document.getElementById('cErr').getContext('2d'), { type:'line',
+        data:{ labels:[], datasets:[
+            {label:'Tracking Error (deg)', data:[], borderColor:'#ff5722', backgroundColor:'rgba(255,87,34,0.07)', fill:true}
+        ]}, options:baseOpts });
+
+    charts.irr = new Chart(document.getElementById('cIrr').getContext('2d'), { type:'line',
+        data:{ labels:[], datasets:[
+            {label:'GHI (W/m²)', data:[], borderColor:'#ffd700'},
+            {label:'DNI (W/m²)', data:[], borderColor:'#ff9800'}
+        ]}, options:baseOpts });
+
+    charts.therm = new Chart(document.getElementById('cTherm').getContext('2d'), { type:'line',
+        data:{ labels:[], datasets:[
+            {label:'Panel Temp (°C)', data:[], borderColor:'#ff5722', yAxisID:'y'},
+            {label:'Derating (%)',     data:[], borderColor:'#ff1744', yAxisID:'y1'}
+        ]}, options:dualYOpts });
+}
+
+// ============================================================
+//  STATE
+// ============================================================
+let buffer   = [];
+let cumKwh   = 0;
+let lastTime = null;
+
+// ============================================================
+//  PROCESS INCOMING STATE
+// ============================================================
+function processState(s) {
+    // --- Derived physics ---
+    const isNight  = !!s.isNight   || s.sunEl <= 0;
+    const isStow   = !!s.isStow    || s.wind >= 15;
+    const isAnom   = !!s.isAnomaly;
+
+    const irr      = isNight ? 0 : (s.irradiance || 0);
+    const dni      = isNight ? 0 : (s.dniWm2     || irr * 0.75);
+    const pTemp    = s.panelTemp || s.temp || 25;
+    const cloudF   = (s.cloud || 0) / 100;
+    const tDerPct  = Math.max(0, TEMP_COEFF * (pTemp - 25) * 100);
+    const tFactor  = Math.max(0, 1 - TEMP_COEFF * (pTemp - 25));
+    const cosInc   = (() => {
+        const tE = Math.abs((s.panelTilt||0) - (90 - (s.sunEl||0)));
+        const aE = Math.min(Math.abs((s.panelAz||0) - (s.sunAz||0)), 360 - Math.abs((s.panelAz||0) - (s.sunAz||0)));
+        return Math.max(0, Math.cos(tE*Math.PI/180) * Math.cos(aE*Math.PI/180));
+    })();
+    const cloudAtt = 1.0 - 0.72 * (cloudF ** 3.2);
+    const theoMax  = isNight ? 0 : irr * PANEL_AREA * EFF_STC;
+    const actualPwr= isNight ? 0 : Math.max(0, theoMax * tFactor * cosInc * cloudAtt);
+    const pr       = s.performanceRatio || (theoMax > 0 ? Math.min(100, (actualPwr / theoMax) * 100) : 0);
+    const lossAngle = theoMax * (1 - cosInc);
+    const lossCloud = theoMax * (1 - cloudAtt);
+
+    // Tracking error
+    const tErrTilt = Math.abs((s.panelTilt||0) - (90 - (s.sunEl||0)));
+    const tErrAz   = Math.min(Math.abs((s.panelAz||0) - (s.sunAz||0)), 360 - Math.abs((s.panelAz||0) - (s.sunAz||0)));
+    const trkErr   = Math.sqrt(tErrTilt**2 + tErrAz**2);
+
+    // Cumulative energy
+    const now = new Date();
+    if(lastTime && !isNight) {
+        const dtH = (now - lastTime) / 3600000;
+        cumKwh += (actualPwr * dtH) / 1000;
+    }
+    lastTime = now;
+
+    // --- Update status badges ---
+    // --- Anomaly type banners ---
+    const ANOMALY_META = {
+        'EFFICIENCY_DROP': {
+            icon: '\u26A1',
+            title: 'SEVERE EFFICIENCY DROP',
+            desc: 'Panel output is below 80% of theoretical. Possible causes: soiling, shading, bypass-diode failure, or cell degradation. Inspect panel surface.'
+        },
+        'TRACKING_FAULT': {
+            icon: '\u2316',
+            title: 'KINEMATIC TRACKING FAULT',
+            desc: 'Angle of incidence > 5\u00b0 in clear-sky conditions. Possible causes: motor jam, encoder drift, or mechanical binding. Check actuator feedback.'
+        },
+        'COMBINED_FAULT': {
+            icon: '\u26D4',
+            title: 'COMBINED FAULT DETECTED',
+            desc: 'Both efficiency drop AND tracking misalignment detected simultaneously. Immediate inspection recommended.'
+        },
+        'ENVIRONMENTAL_FAULT': {
+            icon: '\uD83C\uDF21',
+            title: 'THERMAL LIMIT EXCEEDED',
+            desc: 'Panel cell temperature > 85\u00b0C. Power output critically derated. Check ventilation, reduce load, or enter protective stow mode.'
+        }
+    };
+    const pill = document.getElementById('connPill');
+    pill.className = 'status-pill';
+    if(isAnom) {
+        pill.classList.add('danger');
+        document.getElementById('connText').innerText = 'ANOMALY';
+        // Update banner with specific fault type
+        const aType = s.anomalyType || 'EFFICIENCY_DROP';
+        const meta  = ANOMALY_META[aType] || ANOMALY_META['EFFICIENCY_DROP'];
+        document.getElementById('anomalyIcon').innerText  = meta.icon;
+        document.getElementById('anomalyTitle').innerText = meta.title;
+        document.getElementById('anomalyDesc').innerText  = meta.desc;
+        document.getElementById('alertAnomaly').className = 'alert-bar anomaly';
+    } else {
+        document.getElementById('alertAnomaly').className = 'alert-bar';
+    }
+    document.getElementById('alertStow').style.display  = isStow  ? 'block' : 'none';
+    document.getElementById('alertNight').style.display = isNight ? 'block' : 'none';
+
+    // --- KPI Panel updates ---
+    // srcBadge: show tracking mode; hide 'offline' raw string
+    const srcText = (s.mlSource && s.mlSource !== 'offline' && s.mlSource !== 'night')
+        ? s.mlSource.replace(/_/g,' ').toUpperCase()
+        : (isNight ? 'NIGHT' : 'DIRECT');
+    document.getElementById('srcBadge').innerText = srcText;
+    document.getElementById('actualPwr').innerHTML   = actualPwr.toFixed(1)+'<span class="big-unit">W</span>';
+    document.getElementById('theoPwr').innerText     = theoMax.toFixed(1)+' W';
+    document.getElementById('perfRatio').innerText   = pr.toFixed(1)+' %';
+    document.getElementById('dailyYield').innerText  = cumKwh.toFixed(4)+' kWh';
+
+    document.getElementById('ghiVal').innerHTML      = irr.toFixed(0)+'<span class="big-unit">W/m&#178; GHI</span>';
+    document.getElementById('dniVal').innerText      = dni.toFixed(0)+' W/m²';
+    document.getElementById('pTempVal').innerText    = pTemp.toFixed(1)+' °C';
+    document.getElementById('windVal').innerText     = (s.wind||0).toFixed(1)+' m/s';
+    document.getElementById('cloudVal').innerText    = (s.cloud||0).toFixed(0)+' %';
+
+    document.getElementById('trkErr').innerHTML      = trkErr.toFixed(2)+'<span class="big-unit">\u00b0 ERROR</span>';
+    document.getElementById('azVal').innerText       = (s.panelAz||0).toFixed(1)+'\u00b0';
+    document.getElementById('tiltVal').innerText     = (s.panelTilt||0).toFixed(1)+'\u00b0';
+    // SPA/Hybrid tilt: fall back to local SPA formula when API is offline
+    const localSpa = (s.sunEl != null && s.sunEl > 0)
+        ? Math.max(0, 90 - s.sunEl) : 20.28; // park at lat when night
+    const spaDisp    = (s.spaTilt    != null) ? s.spaTilt.toFixed(1)    : localSpa.toFixed(1);
+    const hybridDisp = (s.hybridTilt != null) ? s.hybridTilt.toFixed(1) : localSpa.toFixed(1);
+    document.getElementById('spaVal').innerText    = spaDisp    + '\u00b0';
+    document.getElementById('hybridVal').innerText = hybridDisp + '\u00b0';
+    if(document.getElementById('aoiVal')) {
+        const aoiDisp = (s.aoiDeg != null) ? s.aoiDeg.toFixed(2) : '--';
+        document.getElementById('aoiVal').innerText = aoiDisp + '\u00b0';
+    }
+
+    document.getElementById('tDerPct').innerText     = tDerPct.toFixed(2)+' %';
+    document.getElementById('lossAngle').innerText   = lossAngle.toFixed(1)+' W';
+    document.getElementById('lossCloud').innerText   = lossCloud.toFixed(1)+' W';
+    if(theoMax > 0) {
+        document.getElementById('barTDer').style.width   = Math.min(100, tDerPct*5)+'%';
+        document.getElementById('barAngle').style.width  = Math.min(100, (lossAngle/theoMax)*100)+'%';
+        document.getElementById('barCloud').style.width  = Math.min(100, (lossCloud/theoMax)*100)+'%';
+    }
+
+    // Buffer label: use compact 24h HH:MM:SS to avoid Excel ##### column-width issue
+    const lbl = now.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+    buffer.push({ lbl, actualPwr, theoMax, pr, trkErr, irr, dni, pTemp, tDerPct });
+    if(buffer.length > MAX_BUFFER) buffer.shift();
+    document.getElementById('bufSize').innerText = buffer.length;
+
+    // --- Chart updates (batch, single pass) ---
+    const lbls = buffer.map(d=>d.lbl);
+    charts.pwr.data.labels                  = lbls;
+    charts.pwr.data.datasets[0].data        = buffer.map(d=>d.actualPwr);
+    charts.pwr.data.datasets[1].data        = buffer.map(d=>d.theoMax);
+    charts.pwr.update('none');
+
+    charts.pr.data.labels                   = lbls;
+    charts.pr.data.datasets[0].data         = buffer.map(d=>d.pr);
+    charts.pr.update('none');
+
+    charts.err.data.labels                  = lbls;
+    charts.err.data.datasets[0].data        = buffer.map(d=>d.trkErr);
+    charts.err.update('none');
+
+    charts.irr.data.labels                  = lbls;
+    charts.irr.data.datasets[0].data        = buffer.map(d=>d.irr);
+    charts.irr.data.datasets[1].data        = buffer.map(d=>d.dni);
+    charts.irr.update('none');
+
+    charts.therm.data.labels                = lbls;
+    charts.therm.data.datasets[0].data      = buffer.map(d=>d.pTemp);
+    charts.therm.data.datasets[1].data      = buffer.map(d=>d.tDerPct);
+    charts.therm.update('none');
+}
+
+// ============================================================
+//  STORAGE LISTENER (cross-tab, zero polling overhead)
+// ============================================================
+window.addEventListener('storage', e => {
+    if(e.key === 'solarTrackerState' && e.newValue) {
+        try { processState(JSON.parse(e.newValue)); } catch(_) {}
+    }
+});
+// Load on open
+const stored = localStorage.getItem('solarTrackerState');
+if(stored) { try { processState(JSON.parse(stored)); } catch(_) {} }
+
+// ============================================================
+//  CONTROLS
+// ============================================================
+document.getElementById('btnReset').addEventListener('click', () => {
+    buffer = []; cumKwh = 0; lastTime = null;
+    Object.values(charts).forEach(c => {
+        c.data.labels = [];
+        c.data.datasets.forEach(ds => ds.data = []);
+        c.update('none');
+    });
+    document.getElementById('bufSize').innerText = '0';
+    document.getElementById('dailyYield').innerText = '0.0000 kWh';
+});
+
+document.getElementById('btnExport').addEventListener('click', () => {
+    if(!buffer.length) { alert('No data in buffer.'); return; }
+    const h = ['Time','ActualPwr_W','TheoMax_W','PR_pct','TrackingErr_deg','GHI_Wm2','DNI_Wm2','PanelTemp_C','ThermalDerating_pct'];
+    const rows = buffer.map(d=>[d.lbl,d.actualPwr.toFixed(2),d.theoMax.toFixed(2),d.pr.toFixed(2),d.trkErr.toFixed(3),d.irr.toFixed(1),d.dni.toFixed(1),d.pTemp.toFixed(1),d.tDerPct.toFixed(3)]);
+    const csv  = [h.join(','), ...rows.map(r=>r.join(','))].join('\n');
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download = `scada_${Date.now()}.csv`;
+    a.click();
+});
+
+initCharts();
+</script>
+</body>
+</html>
