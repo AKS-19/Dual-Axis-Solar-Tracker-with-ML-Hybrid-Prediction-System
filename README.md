@@ -18,7 +18,7 @@ A full-stack 2-axis solar tracking system for **Bhubaneswar, Odisha (20.28°N, 8
 ┌─────────────────────────────────────────────────────────────┐
 │                    BROWSER (Two Tabs)                       │
 │                                                             │
-│  deepseek_html_*.html          analytics.html               │
+│  index.html          analytics.html               │
 │  ┌──────────────────┐          ┌──────────────────────┐     │
 │  │  3D Simulator    │ ──────▶  │  Power Analytics     │     │
 │  │  Three.js scene  │localStorage│  Chart.js dashbd   │     │
@@ -42,7 +42,7 @@ A full-stack 2-axis solar tracking system for **Bhubaneswar, Odisha (20.28°N, 8
 
 ## ✨ Features
 
-### 🔭 3D Solar Simulation (`deepseek_html_*.html`)
+### 🔭 3D Solar Simulation (`index.html`)
 - **Three.js r128** real-time scene — dual-axis panel, sun arc, clouds, stars
 - **Diurnal sun model** — elevation & azimuth computed from SPA equations for Bhubaneswar
 - **Beer-Lambert irradiance** — GHI auto-computed from sun elevation + cloud cover (Kaplanis model)
@@ -86,7 +86,7 @@ A full-stack 2-axis solar tracking system for **Bhubaneswar, Odisha (20.28°N, 8
 ```
 solar-tracker/
 │
-├── deepseek_html_20260423_9e251f.html   # 3D simulator (main entry point)
+├── index.html   # 3D simulator (main entry point)
 ├── analytics.html                       # SCADA analytics dashboard
 ├── api_server.py                        # Flask ML backend (port 5050)
 ├── solar_ml_pipeline.py                 # Model training pipeline
@@ -147,7 +147,7 @@ python -m http.server 8080
 ```
 
 **5. Open in browser**
-- **3D Simulator**: http://localhost:8080/deepseek_html_20260423_9e251f.html
+- **3D Simulator**: http://localhost:8080/index.html
 - **Analytics Dashboard**: http://localhost:8080/analytics.html
 - **API Health Check**: http://localhost:5050/health
 
